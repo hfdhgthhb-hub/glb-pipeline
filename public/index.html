@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GLB to Roblox Uploader</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
+  input, button { width: 100%; padding: 10px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+  button { background: #2563eb; color: white; border: none; border-radius: 6px; }
+  #status { margin-top: 12px; font-size: 14px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h2>Upload GLB → Roblox</h2>
+  <input type="password" id="secret" placeholder="App secret" />
+  <input type="text" id="name" placeholder="Model name (e.g. Car1)" />
+  <input type="file" id="glb" accept=".glb" />
+  <button onclick="doUpload()">Upload</button>
+  <div id="status"></div>
+
+<script>
+async function doUpload() {
+  const secret = document.getElementById('secret').value;
+  const name = document.getElementById('name').value || 'Model';
+  const file = document.getElementById('glb').files[0];
+  const statusEl = document.getElementById('status');
+  if (!file) { statusEl.textContent = 'Pick a .glb file first.'; return; }
+
+  statusEl.textContent = 'Uploading... (can take up to a minute)';
+  const form = new FormData();
+  form.append('glb', file);
+  form.append('name', name);
+
+  try {
+    const res = await fetch('/upload?secret=' + encodeURIComponent(secret), {
+      method: 'POST',
+      body: form,
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = 'Error: ' + JSON.stringify(json.error);
+      return;
+    }
+    statusEl.textContent = 'Done! assetId = ' + json.assetId +
+      '\nGo back to your game and tap the Spawn button.';
+  } catch (err) {
+    statusEl.textContent = 'Request failed: ' + err;
+  }
+}
+</script>
+</body>
+</html>
