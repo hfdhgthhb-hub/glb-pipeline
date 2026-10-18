@@ -6,8 +6,9 @@
 <title>GLB to Roblox Uploader</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
-  input, button { width: 100%; padding: 10px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+  input, button, select { width: 100%; padding: 10px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
   button { background: #2563eb; color: white; border: none; border-radius: 6px; }
+  label { font-size: 13px; color: #555; display: block; margin-top: 10px; }
   #status { margin-top: 12px; font-size: 14px; white-space: pre-wrap; }
 </style>
 </head>
@@ -16,21 +17,43 @@
   <input type="password" id="secret" placeholder="App secret" />
   <input type="text" id="name" placeholder="Model name (e.g. Car1)" />
   <input type="file" id="glb" accept=".glb" />
+
+  <label for="flip">Orientation fix (if it spawns upside down / sideways, re-upload with a different option)</label>
+  <select id="flip">
+    <option value="none">None (as-is)</option>
+    <option value="x180">Flip 180° — front/back axis</option>
+    <option value="z180">Flip 180° — side axis</option>
+    <option value="y180">Flip 180° — spin around (left/right facing)</option>
+    <option value="x90">Rotate 90° — front/back axis</option>
+    <option value="xneg90">Rotate -90° — front/back axis</option>
+    <option value="x180z180">Flip 180° both axes combined</option>
+  </select>
+
   <button onclick="doUpload()">Upload</button>
   <div id="status"></div>
 
 <script>
+const MAX_BYTES = 20 * 1024 * 1024;
+
 async function doUpload() {
   const secret = document.getElementById('secret').value;
   const name = document.getElementById('name').value || 'Model';
+  const flip = document.getElementById('flip').value;
   const file = document.getElementById('glb').files[0];
   const statusEl = document.getElementById('status');
-  if (!file) { statusEl.textContent = 'Pick a .glb file first.'; return; }
 
-  statusEl.textContent = 'Uploading... (can take up to a minute)';
+  if (!file) { statusEl.textContent = 'Pick a .glb file first.'; return; }
+  if (file.size > MAX_BYTES) {
+    statusEl.textContent = 'That file is ' + (file.size / 1024 / 1024).toFixed(1) +
+      'MB — Roblox only accepts files under 20MB. Pick a smaller one.';
+    return;
+  }
+
+  statusEl.textContent = 'Uploading... (can take up to 2 minutes for larger files)';
   const form = new FormData();
   form.append('glb', file);
   form.append('name', name);
+  form.append('flip', flip);
 
   try {
     const res = await fetch('/upload?secret=' + encodeURIComponent(secret), {
