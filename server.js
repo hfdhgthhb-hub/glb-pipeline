@@ -6,9 +6,10 @@ const fs = require("fs");
 const path = require("path");
 
 const app = express();
+const MAX_SIZE = 20 * 1024 * 1024; // Roblox's own hard cap, don't raise this
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: MAX_SIZE },
 });
 
 // ---- your values, filled in directly ----
@@ -17,10 +18,11 @@ const ROBLOX_USER_ID = "5813174190";
 const APP_SECRET = "spawn777car";
 // ------------------------------------------
 
-// Render sets this one automatically, leave it alone
 const PORT = process.env.PORT || 3000;
-
 const LATEST_FILE = path.join(__dirname, "latest.json");
+
+// valid rotation fix codes — must match the FLIP_TABLE keys in the Roblox script
+const VALID_FLIPS = new Set(["auto", "none", "x180", "z180", "x90", "xneg90", "y180", "x180z180"]);
 
 function readLatest() {
   try {
@@ -50,6 +52,7 @@ app.post("/upload", upload.single("glb"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "no file uploaded" });
 
   const displayName = (req.body.name || "MyModel").slice(0, 50);
+  const flip = VALID_FLIPS.has(req.body.flip) ? req.body.flip : "none";
 
   try {
     const form = new FormData();
@@ -90,6 +93,7 @@ app.post("/upload", upload.single("glb"), async (req, res) => {
       assetId: result.assetId,
       moderationState: result.moderationState || "UNKNOWN",
       displayName,
+      flip,
       uploadedAt: new Date().toISOString(),
     };
     writeLatest(latest);
@@ -101,8 +105,9 @@ app.post("/upload", upload.single("glb"), async (req, res) => {
   }
 });
 
+// bigger files take longer to process on Roblox's side — poll for up to ~2 minutes
 async function pollOperation(operationId) {
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 60; i++) {
     const r = await fetch(
       `https://apis.roblox.com/assets/v1/operations/${operationId}`,
       { headers: { "x-api-key": ROBLOX_API_KEY } }
@@ -127,6 +132,15 @@ app.get("/latest", (req, res) => {
   const latest = readLatest();
   if (!latest) return res.status(404).json({ error: "nothing uploaded yet" });
   res.json(latest);
+});
+
+// friendly error instead of a crash/hang when a file is over the 20MB cap
+app.use((err, req, res, next) => {
+  if (err && err.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({ error: "File is too big — must be under 20MB (Roblox's own hard limit)." });
+  }
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: String(err) });
 });
 
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
