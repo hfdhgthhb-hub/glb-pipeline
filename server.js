@@ -21,8 +21,16 @@ const APP_SECRET = "spawn777car";
 const PORT = process.env.PORT || 3000;
 const LATEST_FILE = path.join(__dirname, "latest.json");
 
-// valid rotation fix codes — must match the FLIP_TABLE keys in the Roblox script
 const VALID_FLIPS = new Set(["auto", "none", "x180", "z180", "x90", "xneg90", "y180", "x180z180"]);
+
+// which file extensions map to which Roblox content-type
+const EXT_MAP = {
+  ".glb":   { contentType: "model/gltf-binary", kind: "glb" },
+  ".gltf":  { contentType: "model/gltf+json",    kind: "glb" },
+  ".fbx":   { contentType: "model/fbx",          kind: "glb" },
+  ".rbxm":  { contentType: "model/x-rbxm",        kind: "rbxm" },
+  ".rbxmx": { contentType: "model/x-rbxm",        kind: "rbxm" },
+};
 
 function readLatest() {
   try {
@@ -47,12 +55,22 @@ function checkSecret(req, res) {
 
 app.use(express.static(path.join(__dirname, "public")));
 
-app.post("/upload", upload.single("glb"), async (req, res) => {
+app.post("/upload", upload.single("model"), async (req, res) => {
   if (!checkSecret(req, res)) return;
   if (!req.file) return res.status(400).json({ error: "no file uploaded" });
 
   const displayName = (req.body.name || "MyModel").slice(0, 50);
   const flip = VALID_FLIPS.has(req.body.flip) ? req.body.flip : "none";
+
+  const originalName = req.file.originalname || "model.glb";
+  const ext = path.extname(originalName).toLowerCase();
+  const typeInfo = EXT_MAP[ext];
+
+  if (!typeInfo) {
+    return res.status(400).json({
+      error: `Unsupported file type "${ext}". Use .glb, .gltf, .fbx, .rbxm, or .rbxmx.`,
+    });
+  }
 
   try {
     const form = new FormData();
@@ -66,8 +84,8 @@ app.post("/upload", upload.single("glb"), async (req, res) => {
       })
     );
     form.append("fileContent", req.file.buffer, {
-      filename: req.file.originalname || "model.glb",
-      contentType: "model/gltf-binary",
+      filename: originalName,
+      contentType: typeInfo.contentType,
     });
 
     const createRes = await fetch("https://apis.roblox.com/assets/v1/assets", {
@@ -94,6 +112,7 @@ app.post("/upload", upload.single("glb"), async (req, res) => {
       moderationState: result.moderationState || "UNKNOWN",
       displayName,
       flip,
+      kind: typeInfo.kind, // "glb" or "rbxm" — tells the Roblox script how to handle it
       uploadedAt: new Date().toISOString(),
     };
     writeLatest(latest);
@@ -105,7 +124,6 @@ app.post("/upload", upload.single("glb"), async (req, res) => {
   }
 });
 
-// bigger files take longer to process on Roblox's side — poll for up to ~2 minutes
 async function pollOperation(operationId) {
   for (let i = 0; i < 60; i++) {
     const r = await fetch(
@@ -134,7 +152,6 @@ app.get("/latest", (req, res) => {
   res.json(latest);
 });
 
-// friendly error instead of a crash/hang when a file is over the 20MB cap
 app.use((err, req, res, next) => {
   if (err && err.code === "LIMIT_FILE_SIZE") {
     return res.status(400).json({ error: "File is too big — must be under 20MB (Roblox's own hard limit)." });
